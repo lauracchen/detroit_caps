@@ -1,6 +1,13 @@
-#this takes a csv with geocoded addresses (lon and lat columns) and aggregates points to census tract and block groups
+#adapted from "Seattle Shutoffs - single family" by Winn Costantini
 
-#set working directory and get data
+#title: wm_aggregator.R
+#author: Laura Chen
+#date: 3/10/22
+#output: "csv file CAPAccountsRedacted.csv"
+
+#this takes a csv with geocoded addresses (includes Longitude and Latitude columns), assigns block groups and census tracts, and removes sensitive information
+
+#set working directory and get data from csv
 setwd("C:/Users/laura/Desktop/wayne_metro_testing")
 geocoded <- read.csv("HeadersDemo.csv")
 #remove NAs based on latitude
@@ -28,18 +35,29 @@ caps<- st_as_sf(geocoded, coords=c("Longitude", "Latitude"), crs=4326)
 #connect with census API
 census_api_key("d463ce221e5a0730da51aa1e4200ec68d7ee6c81", install = TRUE, overwrite = TRUE)
 
+#get household number variables
 variables <- load_variables(2019, 'acs5', cache = TRUE)
 #View(variables)
-
 my_var <- c(total_houses = "B11001_001",
             family_house = "B11001_002",
             nonfamily_house = "B11001_007")
-#get variables at block group level in king county WA in 2019 with geometry
+
+#get variables at block group and census tract level in Wayne County, MI in 2019 with geometry
 bg_data_19 <- get_acs(
   geography = "block group",
-  county = "King",
+  county = "Wayne",
   year = 2019,
-  state = "WA",
+  state = "MI",
+  variables = my_var,
+  survey='acs5',
+  geometry=TRUE
+)
+
+tract_data_19 <- get_acs(
+  geography = "tract",
+  county = "Wayne",
+  year = 2019,
+  state = "MI",
   variables = my_var,
   survey='acs5',
   geometry=TRUE
@@ -48,6 +66,9 @@ bg_data_19 <- get_acs(
 #separate table so that pivot will work
 bg_data_19_var <- bg_data_19 %>% dplyr::select(c("GEOID", "variable","estimate", "geometry"))
 bg_data_19_geom <- unique(bg_data_19 %>% dplyr::select(c("GEOID", "geometry")))
+
+tract_data_19_var <- tract_data_19 %>% dplyr::select(c("GEOID", "variable","estimate", "geometry"))
+tract_data_19_geom <- unique(tract_data_19 %>% dplyr::select(c("GEOID", "geometry")))
 
 #pivot and group
 bg_data_19_var <- bg_data_19_var %>%
@@ -58,37 +79,50 @@ bg_data_19_var <- bg_data_19_var %>%
               values_from = estimate, 
               values_fill = list(estimate = 0))
 
+tract_data_19_var <- tract_data_19_var %>%
+  group_by(GEOID, variable) %>%
+  st_set_geometry(NULL) %>%
+  pivot_wider(id_cols = GEOID,
+              names_from = variable,
+              values_from = estimate, 
+              values_fill = list(estimate = 0))
+
+
 #merge pivoted table with geometry
 bg_data_19_merge <- merge(bg_data_19_var, bg_data_19_geom) 
-class(bg_data_19_merge)
+tract_data_19_merge <- merge(tract_data_19_var, tract_data_19_geom)
 
 #assign geometry to data, convert to sf object
 bg_data_19_merge <- st_set_geometry(bg_data_19_merge, 'geometry') %>% st_transform(4326)  
+tract_data_19_merge <- st_set_geometry(tract_data_19_merge, 'geometry') %>% st_transform(4326)  
 
-#find corresponding block group + assign GEOID of block group to account
+#find corresponding block group 
 locations <- st_intersects(caps,bg_data_19_merge)
+locations_tracts <- st_intersects(caps,tract_data_19_merge)
 
+#assign GEOID of block group to account
 for (x in 1:nrow(caps)) {
-  print(x)
   caps$bg[x] <- bg_data_19_merge[locations[[x]],1]$GEOID
-  bg_data_19_merge[locations[[i]],1]$GEOID
+  #bg_data_19_merge[locations[[i]],1]$GEOID
+}
+for (x in 1:nrow(caps)) {
+  caps$ct[x] <- tract_data_19_merge[locations_tracts[[x]],1]$GEOID
+  #bg_data_19_merge[locations_tracts[[i]],1]$GEOID
 }
 
 #remove identifying columns
 redacted_accts <- st_drop_geometry(caps %>% select(
-  !Physical.Address.1
+  !First.Name
+  &!Last.Name
+  &!Home.Phone..
+  &!Cell.Phone..
+  &!Physical.Address.1
   &!Physical.Address.2
   &!Physical.City
   &!Physical.State
-  &!Physical.Zip
-  &!First.Name
-  &!Last.Name
-  &!Home.Phone..
-  &!Cell.Phone..))
+  &!Physical.Zip))
 
-#create csv file with assigned block groups
+#print top of data written to csv
+head(redacted_accts)
+#create csv file with assigned block groups + without identifiers
 write.csv(redacted_accts, file = "CAPAccountsRedacted.csv")
-
-#change county
-#finish readme
-#add tract by importing census data and then running intersect

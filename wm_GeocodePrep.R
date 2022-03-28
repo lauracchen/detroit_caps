@@ -5,7 +5,7 @@
 #date: 3/10/22
 #output: "csv file AddressesUnique.csv"
 
-#this script takes an input csv with separated "Address", "City", and "Zip" and outputs a csv file containing only unique addresses.
+#this script takes an input xlsx with separated "Address", "City", and "Zip" and outputs a csv file containing only unique addresses.
 
 #set the correct working directory
 setwd("C:/Users/laura/Desktop/wayne_metro_testing")
@@ -19,7 +19,7 @@ head(caps)
 dt <- data.table(caps)
 
 #remove duplicate rows
-capsUnique <- dt[!duplicated(dt[ , c("Address")]), ]
+capsUnique <- dt[!duplicated(dt[ , c("Physical Address 1")]), ]
 
 #print top of data written to csv
 head(capsUnique)

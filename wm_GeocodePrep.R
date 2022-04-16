@@ -9,7 +9,8 @@
 
 #set the correct working directory
 setwd("C:/Users/laura/Desktop/wayne_metro_testing")
-library("data.table")
+library(data.table)
+library(readxl)
 
 ##read in data, ensure file is in same folder as working directory
 caps<- read_excel("caps_data.xlsx")
